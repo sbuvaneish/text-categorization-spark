@@ -4,6 +4,7 @@ from pyspark import SparkConf
 from keras import models, layers
 import boto3
 import os
+import sys
 import pickle
 import json
 import tempfile
@@ -18,11 +19,14 @@ s3 = boto3.resource('s3')
 bucket = s3.Bucket(BUCKET)
 s3.meta.client.head_bucket(Bucket=BUCKET)
 
+request_id = sys.argv[1]
+search_string = 'input/{request_id}'.format(request_id=request_id)
+
 key_text_list = []
 
 for pair in bucket.objects.all():
     obj = s3.Object(BUCKET, pair.key)
-    if pair.key.endswith('.txt'):
+    if pair.key.endswith('.txt') and search_string in pair.key:
         content = obj.get()['Body'].read()
         key_text_list.append((pair.key, content.decode('utf-8').lower()))
     elif pair.key.endswith('.pickle'):
@@ -68,8 +72,11 @@ model.load_weights(fp.name)
 
 text_list = [text for (key, text) in key_text_list]
 features = tokenizer.texts_to_matrix(text_list)
-predictions = np.argmax(model.predict(features), axis=1)
 
+if len(features) > 0:
+	predictions = np.argmax(model.predict(features), axis=1)
+else:
+	predictions = []
 
 label_codes = json.loads(s3.Object(BUCKET, label_encoding_key).get()['Body'].read().decode('utf-8'))
 label_codes = {int(key): value for key, value in label_codes.items()}
